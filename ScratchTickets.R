@@ -1,0 +1,113 @@
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(RColorBrewer)
+library(tidyquant)
+
+
+# Functions
+###########
+#' Simulate winnings
+#' 
+#' Simulate winnings from n trials (lottery winnings)
+#'
+#' @param prizes A data frame or tibble of prizes. Must include columns 'win.amount' and 'win.odds'
+#' @param n The number of games to simulate
+#' 
+#' @return A vector of results from drawing n random prizes based on the win.odds
+simulate_winnings <- function(prizes, n = 10) {
+  sample(prizes$win.amount, size = n, replace = T, prob = prizes$win.odds) - 10
+}
+
+#' Perform a random walk of lottery prize winnings.
+#'
+#' @param prizes A data frame or tibble of prizes. Must include columns 'win' and 'win.odds'
+#' @param n The number of games to simulate in each walk
+#' @param n.walks The number of walks to simulate, each simulating n winnings
+#' 
+#' @return A list of n.walks simulated random walks, each including n simulated games
+walk <- function(prizes, n, n.walks = 100) {
+  
+  walks <- list()
+  
+  for (i in 1:n.walks) {
+    x <- tibble(
+      index = 1:n,
+      change = simulate_winnings(prizes, n)
+    )
+    x$gain <- cumsum(x$change)
+    walks[[i]] <- x
+  }
+  
+  return(walks)
+  
+}
+
+
+# Simulation: MA State Lottery - Decades of Dollars
+###################################################
+# Set simulation parameters.
+n <- 1000
+simulations <- 10
+
+# Construct the winnings table.
+prizes <- tibble(
+  win.amount = c(
+    2400000,
+    10000,
+    2000,
+    1000,
+    500,
+    200,
+    100,
+    50,
+    25,
+    20,
+    15,
+    10
+  ),
+  win.odds = c(
+    1 / 2520000,
+    1 / 72000,
+    1 / 24000,
+    1 / 1870.13,
+    1 / 1200,
+    1 / 640,
+    1 / 65.34,
+    1 / 100,
+    1 / 100,
+    1 / 12.5,
+    1 / 16.67,
+    1/ 9.09
+  )
+)
+
+prizes <- add_row(prizes, tibble(
+  win.amount = 0,
+  win.odds = 1 - sum(prizes$win.odds)
+))
+
+# Perform the random walks.
+set.seed(234839) # Included for reproducibility of results.
+walks <- walk(prizes, n, simulations)
+
+# Visualize the results.
+walks %>%
+  bind_rows(.id = "group") %>%
+  ggplot(aes(x = index, y = gain, color = group)) +
+  geom_hline(yintercept = 0, size = 1, col = "black") +
+  geom_line(size = 1) +
+  scale_y_continuous(labels = comma) +
+  scale_color_brewer(palette = "Paired") +
+  theme_tq() +
+  theme(
+    legend.position = "none"
+  ) +
+  labs(
+    title = paste0("Simulated Decades of Dollars Winnings"),
+    subtitle = paste0("Games = ", n, " | Simulations = ", simulations, "\n"),
+    caption = "\nSource: https://www.masslottery.com/games/draw-and-instants/decade-of-dollars-10-2021",
+    x = "\nGame #",
+    y = "Cumulative Winnings ($)\n"
+  )
