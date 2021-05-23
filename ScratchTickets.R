@@ -4,26 +4,14 @@ library(ggplot2)
 library(scales)
 library(RColorBrewer)
 library(tidyquant)
+library(directlabels)
 
 
 # Functions
 ###########
-#' Simulate winnings
-#' 
-#' Simulate winnings from n trials (lottery winnings)
+#' Perform a random walk of lottery prize winnings, simulating playing n games.
 #'
 #' @param prizes A data frame or tibble of prizes. Must include columns 'win.amount' and 'win.odds'
-#' @param cost The cost to play, i.e. cost per ticket
-#' @param n The number of games to simulate
-#' 
-#' @return A vector of results from drawing n random prizes based on the win.odds
-simulate_winnings <- function(prizes, cost, n = 10) {
-  sample(prizes$win.amount, size = n, replace = T, prob = prizes$win.odds) - cost
-}
-
-#' Perform a random walk of lottery prize winnings.
-#'
-#' @param prizes A data frame or tibble of prizes. Must include columns 'win' and 'win.odds'
 #' @param cost The cost to play, i.e. cost per ticket
 #' @param n The number of games to simulate in each walk
 #' @param n.walks The number of walks to simulate, each simulating n winnings
@@ -36,7 +24,7 @@ walk <- function(prizes, cost, n, n.walks = 100) {
   for (i in 1:n.walks) {
     x <- tibble(
       index = 1:n,
-      change = simulate_winnings(prizes, cost, n)
+      change = sample(prizes$win.amount, size = n, replace = T, prob = prizes$win.odds) - cost
     )
     x$gain <- cumsum(x$change)
     walks[[i]] <- x
@@ -63,12 +51,25 @@ visualize_walks <- function(
   ylab = "Cumulative Winnings ($)"
 ) {
   
-  walks %>%
-    bind_rows(.id = "group") %>%
-    ggplot(aes(x = index, y = gain, color = group)) +
+  # Convert to tall format from list.
+  walks.tall <- walks %>% bind_rows(.id = "group")
+  
+  # Add ending value in each group for direct labels.
+  walks.tall <- walks.tall %>%
+    left_join(
+      aggregate(walks.tall$gain, by = list(walks.tall$group), FUN = tail, n = 1),
+      by = c("group" = "Group.1")
+    ) %>%
+    rename(last.value = x)
+  
+  # Plot the walks.
+  walks.tall %>%
+    ggplot(aes(x = index, y = gain, color = group, group = group)) +
     geom_hline(yintercept = 0, size = 1, col = "black") +
     geom_line(size = 1) +
     scale_y_continuous(labels = comma) +
+    scale_x_continuous(expand = c(0, 100)) +
+    geom_dl(aes(label = comma(last.value)), method = "last.points") +
     scale_color_brewer(palette = "Paired") +
     theme_tq() +
     theme(
@@ -88,7 +89,7 @@ visualize_walks <- function(
 # Simulation: MA State Lottery - Decades of Dollars
 ###################################################
 # Set simulation parameters.
-n <- 1000
+games.per.simulation <- 1000
 simulations <- 10
 
 # Construct the winnings table.
@@ -130,7 +131,7 @@ prizes <- add_row(prizes, tibble(
 
 # Perform the random walks.
 set.seed(234839) # Included for reproducibility of results.
-walks <- walk(prizes, 10, n, simulations)
+walks <- walk(prizes, 10, games.per.simulation, simulations)
 
 # Visualize the results.
 visualize_walks(
